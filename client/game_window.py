@@ -1,141 +1,130 @@
-import sys
 import threading
-
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QPushButton,
-    QGridLayout, QVBoxLayout, QHBoxLayout, QLabel
+    QWidget, QPushButton, QGridLayout, QVBoxLayout, 
+    QHBoxLayout, QLabel, QMessageBox
 )
+from PyQt5.QtCore import pyqtSignal, QObject
+from board import fire, all_ships_sunk, SHIP, HIT, MISS
 
-from board import create_board, fire
-from network import Network
+class GameSignaller(QObject):
+    """Thread içinden arayüzü güvenli güncellemek için sinyal mekanizması"""
+    data_received = pyqtSignal(str)
 
 class GameWindow(QWidget):
-    def __init__(self, my_board):
+    def __init__(self, network, my_board):
         super().__init__()
-        self.setWindowTitle("Amiral Battı - Oyun")
-        self.setGeometry(200, 100, 800, 500)
-
+        self.network = network # SetupWindow'dan gelen network nesnesi
         self.my_board = my_board
-        self.enemy_board = create_board()
+        self.my_turn = False
+        self.my_role = None
 
-        self.network = Network("127.0.0.1", 6060)
+        self.setWindowTitle("Amiral Battı - Savaş Alanı")
+        self.setGeometry(200, 100, 900, 500)
+        
+        self.signaller = GameSignaller()
+        self.signaller.data_received.connect(self.handle_server_message)
 
         self.init_ui()
-
-        thread = threading.Thread(target=self.receive_data)
-        thread.daemon = True
-        thread.start()
-        self.my_role = None  # "PLAYER:0" veya "PLAYER:1"
-        self.my_turn = False
+        self.start_receiving()
 
     def init_ui(self):
         main_layout = QVBoxLayout()
-
-        title = QLabel("Oyun Ekranı")
-        title.setStyleSheet("font-size: 20px; font-weight: bold;")
-        main_layout.addWidget(title)
+        self.status_label = QLabel("Sunucudan rol bekleniyor...")
+        self.status_label.setStyleSheet("font-size: 16px; color: blue;")
+        main_layout.addWidget(self.status_label)
 
         boards_layout = QHBoxLayout()
-
-        self.my_grid = QGridLayout()
-        self.my_buttons = []
-
-        for i in range(10):
-            row = []
-            for j in range(10):
-                btn = QPushButton("")
-                btn.setFixedSize(30, 30)
-                self.my_grid.addWidget(btn, i, j)
-                row.append(btn)
-            self.my_buttons.append(row)
-
-        self.enemy_grid = QGridLayout()
-        self.enemy_buttons = []
-
-        for i in range(10):
-            row = []
-            for j in range(10):
-                btn = QPushButton("")
-                btn.setFixedSize(30, 30)
-                btn.clicked.connect(lambda _, x=i, y=j: self.fire_enemy(x, y))
-                self.enemy_grid.addWidget(btn, i, j)
-                row.append(btn)
-            self.enemy_buttons.append(row)
-
-        self.update_my_board()
-
-        boards_layout.addLayout(self.my_grid)
-        boards_layout.addLayout(self.enemy_grid)
+        
+        # Kendi Tahtam (Sol)
+        self.my_buttons = self.create_grid(boards_layout, is_enemy=False)
+        # Rakip Tahtası (Sağ)
+        self.enemy_buttons = self.create_grid(boards_layout, is_enemy=True)
 
         main_layout.addLayout(boards_layout)
         self.setLayout(main_layout)
+        self.render_my_ships()
 
-    def update_my_board(self):
+    def create_grid(self, parent_layout, is_enemy):
+        grid = QGridLayout()
+        buttons = []
+        for i in range(10):
+            row = []
+            for j in range(10):
+                btn = QPushButton("")
+                btn.setFixedSize(35, 35)
+                if is_enemy:
+                    btn.clicked.connect(lambda _, r=i, c=j: self.fire_at_enemy(r, c))
+                grid.addWidget(btn, i, j)
+                row.append(btn)
+            buttons.append(row)
+        parent_layout.addLayout(grid)
+        return buttons
+
+    def render_my_ships(self):
         for i in range(10):
             for j in range(10):
-                if self.my_board[i][j] == 1:
+                if self.my_board[i][j] == SHIP:
                     self.my_buttons[i][j].setStyleSheet("background-color: blue;")
 
-    def fire_enemy(self, x, y):
+    def fire_at_enemy(self, x, y):
         if not self.my_turn:
-            print("Sıra sizde değil, rakibi bekleyin!")
+            QMessageBox.warning(self, "Uyarı", "Sıra sizde değil!")
             return
         
-        self.network.send(f"{x},{y}")
+        # Sunucuya saldırı komutu gönder[cite: 2]
+        self.network.send(f"ATTACK:{x},{y}")
 
-        result = fire(self.enemy_board, x, y)
+    def start_receiving(self):
+        thread = threading.Thread(target=self.receive_thread, daemon=True)
+        thread.start()
 
-        if result == "hit":
-            self.enemy_buttons[x][y].setStyleSheet("background-color: red;")
-        elif result == "miss":
-            self.enemy_buttons[x][y].setStyleSheet("background-color: gray;")
-            self.enemy_buttons[x][y].setStyleSheet("background-color: gray;")
-            self.my_turn = False
-        if result != "hit":
-            self.my_turn = False
-            
-    def receive_data(self):
+    def receive_thread(self):
         while True:
             try:
                 data = self.network.client.recv(1024).decode()
                 if data:
-                    if data.startswith("PLAYER:"):
-                    # Rol ataması: PLAYER:0 ise ilk oyuncudur ve sıra ondadır
-                        self.my_role = data
-                        if data == "PLAYER:0":
-                            self.my_turn = True
-                            print("Oyuna siz başlıyorsunuz!")
-                        else:
-                            self.my_turn = False
-                            print("Rakibin başlaması bekleniyor...")
-                
-                    elif "," in data:
-                    # Rakipten gelen atış koordinatı
-                        x, y = map(int, data.split(","))
-                        self.update_from_enemy(x, y)
-                        self.my_turn = True # Rakip ateş etti, sıra bana geçti
-            
+                    self.signaller.data_received.emit(data)
             except:
                 break
 
-    def update_from_enemy(self, x, y):
-        result = fire(self.my_board, x, y)
+    def handle_server_message(self, data):
+        """Sunucudan gelen komutları işler"""
+        if data.startswith("PLAYER:"):
+            self.my_role = data.split(":")[1]
+            self.status_label.setText(f"Rolünüz: Oyuncu {self.my_role}")
+            
+        elif data.startswith("START:"):
+            starter = data.split(":")[1]
+            self.my_turn = (self.my_role == starter)
+            status = "Sıra Sizde!" if self.my_turn else "Rakip Bekleniyor..."
+            self.status_label.setText(status)
 
-        if result == "hit":
-            self.my_buttons[x][y].setStyleSheet("background-color: red;")
-        elif result == "miss":
-            self.my_buttons[x][y].setStyleSheet("background-color: gray;")
-        else:
-            print("Rakip zaten buraya ateş etmiş")
+        elif data.startswith("ATTACK:"):
+            # Rakip bana ateş etti
+            coords = data.split(":")[1].split(",")
+            x, y = int(coords[0]), int(coords[1])
+            result = fire(self.my_board, x, y)
+            
+            # Sonucu hem kendimde güncelle hem sunucuya/rakibe gönder[cite: 2]
+            color = "red" if result == "hit" else "gray"
+            self.my_buttons[x][y].setStyleSheet(f"background-color: {color};")
+            self.network.send(f"RESULT:{x},{y},{result}")
+            
+            if result == "miss":
+                self.my_turn = True
+                self.status_label.setText("Sıra Sizde!")
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-
-    sample_board = create_board()
-    sample_board[0][0] = 1
-    sample_board[0][1] = 1
-    sample_board[2][2] = 1
-
-    window = GameWindow(sample_board)
-    window.show()
-    sys.exit(app.exec_())
+        elif data.startswith("RESULT:"):
+            # Benim atışımın sonucu geldi
+            parts = data.split(":")[1].split(",")
+            x, y, res = int(parts[0]), int(parts[1]), parts[2]
+            
+            color = "red" if res == "hit" else "gray"
+            self.enemy_buttons[x][y].setStyleSheet(f"background-color: {color};")
+            self.enemy_buttons[x][y].setEnabled(False)
+            
+            if res == "miss":
+                self.my_turn = False
+                self.status_label.setText("Sıra Rakipte...")
+            
+            # Oyun bitti mi kontrolü sunucuya veya yerel board'a eklenebilir
