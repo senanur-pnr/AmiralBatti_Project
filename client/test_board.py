@@ -1,0 +1,11 @@
+from board import *
+board = create_board()
+place_ship(board, 0, 0, 4, "H")
+place_ship(board, 2, 2, 3, "V")
+print("Başlangıç:")
+print_board(board)
+print("Atış (0,0):", fire(board, 0, 0))
+print("Atış (5,5):", fire(board, 5, 5))
+print("Son durum:")
+print_board(board)
+print("Bitti mi?", all_ships_sunk(board))
