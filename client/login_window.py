@@ -35,12 +35,13 @@ class LoginWindow(QWidget):
                 from setup_window import SetupWindow
                 
                 self.network = Network(ip)
-                if self.network.id:
+                if self.network.player_id is not None:
                     self.setup_win = SetupWindow(self.network, username)
                     self.setup_win.show()
                     self.close()
                 else:
-                    QMessageBox.critical(self, "Hata", "Sunucuya bağlanılamadı!")
+                    reason = self.network.id if self.network.id else "Sunucuya baglanilamadi!"
+                    QMessageBox.critical(self, "Hata", f"Baglanti basarisiz: {reason}")
             except Exception as e:
                 QMessageBox.critical(self, "Hata", f"Bağlantı kurulamadı: {e}")
         else:

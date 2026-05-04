@@ -140,6 +140,7 @@ class BattleShipServer:
 
         self.boards[player_id] = board
         self.ready.add(player_id)
+        self.safe_send(player_id, "READY_OK")
         if len(self.ready) == 2:
             self.turn = 0
             self.send_turn_state()
@@ -220,6 +221,8 @@ class BattleShipServer:
         with self.lock:
             if player_id in self.clients:
                 del self.clients[player_id]
+            # Bir oyuncu dusunce oyun durumunu temizleyip yeni eslesmeye hazirliyoruz.
+            self.reset_game_state()
         conn.close()
 
     def start(self):
