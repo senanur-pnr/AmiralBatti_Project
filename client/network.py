@@ -6,13 +6,21 @@ class Network:
         self.server = ip
         self.port = port
         self.addr = (self.server, self.port)
+        self.id = None
+        self.player_id = None
         self.id = self.connect()
 
     def connect(self):
         try:
             self.client.connect(self.addr)
             # Sunucudan gelen ilk mesajı (ID) al
-            return self.client.recv(2048).decode().strip()
+            msg = self.client.recv(2048).decode().strip()
+            if msg.startswith("PLAYER:"):
+                try:
+                    self.player_id = int(msg.split(":", 1)[1])
+                except ValueError:
+                    self.player_id = None
+            return msg
         except Exception as e:
             print(f"Baglanti hatasi: {e}")
             return None
