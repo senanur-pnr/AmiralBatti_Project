@@ -15,9 +15,12 @@ def place_ship(board, x, y, size, orientation):
     Belirtilen koordinata gemi yerleştirir. 
     Çakışma ve sınır kontrolü yapar.
     """
+    if size <= 0 or not (0 <= x < BOARD_SIZE and 0 <= y < BOARD_SIZE):
+        return False
+
     # Tahta sınırları dışına çıkıyor mu?
     if orientation == "H":
-        if y + size > BOARD_SIZE or x >= BOARD_SIZE:
+        if y + size > BOARD_SIZE:
             return False
         # Çakışma kontrolü
         for i in range(size):
@@ -28,7 +31,7 @@ def place_ship(board, x, y, size, orientation):
             board[x][y + i] = SHIP
             
     elif orientation == "V":
-        if x + size > BOARD_SIZE or y >= BOARD_SIZE:
+        if x + size > BOARD_SIZE:
             return False
         # Çakışma kontrolü
         for i in range(size):
@@ -37,7 +40,9 @@ def place_ship(board, x, y, size, orientation):
         # Yerleştirme
         for i in range(size):
             board[x + i][y] = SHIP
-            
+    else:
+        return False
+
     return True
 
 def fire(board, x, y):
@@ -78,3 +83,14 @@ def get_board_state(board, hide_ships=False):
                 new_row.append(cell)
         display_board.append(new_row)
     return display_board
+
+def print_board(board):
+    """Tahtayı terminalde okunabilir şekilde yazdırır."""
+    symbols = {
+        EMPTY: ".",
+        SHIP: "S",
+        MISS: "O",
+        HIT: "X",
+    }
+    for row in board:
+        print(" ".join(symbols.get(cell, "?") for cell in row))
