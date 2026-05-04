@@ -139,7 +139,7 @@ class GameWindow(QWidget):
                     self.my_buttons[x][y].setStyleSheet(f"background-color: {bg_color}; color: white; border: 1px solid black;")
                     self.my_buttons[x][y].setText(text)
                     
-                    # Sonucu sunucuya bildir (Sunucu bunu rakibe RESULT olarak iletir)
+                    
                     self.network.send(f"RESULT:{x},{y},{result}\n")
                 except Exception as e:
                     print(f"Saldırı işleme hatası: {e}")
