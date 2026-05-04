@@ -12,15 +12,17 @@ class Network:
         try:
             self.client.connect(self.addr)
             # Sunucudan gelen ilk mesajı (ID) al
-            return self.client.recv(2048).decode()
+            return self.client.recv(2048).decode().strip()
         except Exception as e:
             print(f"Baglanti hatasi: {e}")
             return None
 
-    def send(self, data):
+    def send(self, data, wait_response=True):
         try:
             self.client.send(str.encode(data))
-            return self.client.recv(2048).decode()
+            if wait_response:
+                return self.client.recv(2048).decode().strip()
+            return None
         except socket.error as e:
             print(f"Gonderim hatasi: {e}")
             return None

@@ -97,7 +97,7 @@ class SetupWindow(QWidget):
             return
         
         board_data = str(self.board)
-        response = self.network.send(f"READY:{board_data}")
+        response = self.network.send(f"READY:{board_data}\n")
         
         if response:
             QMessageBox.information(self, "Basarili", "Gemiler sunucuya iletildi. Rakip bekleniyor...")
