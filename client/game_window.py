@@ -27,6 +27,14 @@ class GameWindow(QWidget):
         self.init_ui()
         self.start_receiving()
 
+    def render_my_ships(self):
+        """Kendi tahtamdaki gemileri maviye boyar"""
+        for i in range(10):
+            for j in range(10):
+                # SHIP veya 1 değerini kontrol et
+                if self.my_board[i][j] == 1: 
+                    self.my_buttons[i][j].setStyleSheet("background-color: blue; border: 1px solid white;")   
+
     def init_ui(self):
         main_layout = QVBoxLayout()
         self.status_label = QLabel("Sunucudan rol bekleniyor...")
@@ -61,18 +69,29 @@ class GameWindow(QWidget):
         return buttons
 
     def render_my_ships(self):
-        for i in range(10):
-            for j in range(10):
-                if self.my_board[i][j] == SHIP:
-                    self.my_buttons[i][j].setStyleSheet("background-color: blue;")
+    # SHIP değerinin ne olduğunu görmek için test amaçlı yazdırabilirsin
+    # print(f"Gelen Tahta: {self.my_board}") 
+     for i in range(10):
+        for j in range(10):
+            # Gemiler tahtada genellikle 1 ile temsil edilir
+            if self.my_board[i][j] == 1: 
+                self.my_buttons[i][j].setStyleSheet("background-color: blue; border: 1px solid white;")
+            else:
+                self.my_buttons[i][j].setStyleSheet("")
 
     def fire_at_enemy(self, x, y):
         if not self.my_turn:
             QMessageBox.warning(self, "Uyarı", "Sıra sizde değil!")
             return
         
-        # Sunucuya saldırı komutu gönder[cite: 2]
-        self.network.send(f"ATTACK:{x},{y}")
+        # Sadece gönderiyoruz, yanıtı receive_thread içinde bekleyeceğiz
+        try:
+            self.network.client.send(f"ATTACK:{x},{y}".encode())
+            # Gönderdikten sonra hemen donmayı engellemek için geçici olarak sırayı kapatabilirsin
+            self.my_turn = False 
+            self.status_label.setText("Atış yapıldı, yanıt bekleniyor...")
+        except Exception as e:
+            print(f"Gönderim hatası: {e}")
 
     def start_receiving(self):
         thread = threading.Thread(target=self.receive_thread, daemon=True)
@@ -88,43 +107,60 @@ class GameWindow(QWidget):
                 break
 
     def handle_server_message(self, data):
-        """Sunucudan gelen komutları işler"""
-        if data.startswith("PLAYER:"):
-            self.my_role = data.split(":")[1]
-            self.status_label.setText(f"Rolünüz: Oyuncu {self.my_role}")
-            
-        elif data.startswith("START:"):
-            starter = data.split(":")[1]
-            self.my_turn = (self.my_role == starter)
-            status = "Sıra Sizde!" if self.my_turn else "Rakip Bekleniyor..."
-            self.status_label.setText(status)
+        """Sunucudan gelen komutları işler ve ekranları renklendirir"""
+        # Paketlerin yapışmasını önlemek için satır bazlı ayırıyoruz
+        messages = data.strip().split("\n")
+        
+        for msg in messages:
+            if not msg: continue
+            print(f"İşlenen Komut: {msg}")
 
-        elif data.startswith("ATTACK:"):
-            # Rakip bana ateş etti
-            coords = data.split(":")[1].split(",")
-            x, y = int(coords[0]), int(coords[1])
-            result = fire(self.my_board, x, y)
-            
-            # Sonucu hem kendimde güncelle hem sunucuya/rakibe gönder[cite: 2]
-            color = "red" if result == "hit" else "gray"
-            self.my_buttons[x][y].setStyleSheet(f"background-color: {color};")
-            self.network.send(f"RESULT:{x},{y},{result}")
-            
-            if result == "miss":
-                self.my_turn = True
-                self.status_label.setText("Sıra Sizde!")
+            # --- SIRA GÜNCELLEME ---
+            if msg.startswith("TURN:"):
+                turn_info = msg.split(":")[1]
+                self.my_turn = (turn_info == "YES")
+                status = "SIRA SİZDE!" if self.my_turn else "SIRA RAKİPTE..."
+                color = "green" if self.my_turn else "red"
+                self.status_label.setText(status)
+                self.status_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {color};")
 
-        elif data.startswith("RESULT:"):
-            # Benim atışımın sonucu geldi
-            parts = data.split(":")[1].split(",")
-            x, y, res = int(parts[0]), int(parts[1]), parts[2]
-            
-            color = "red" if res == "hit" else "gray"
-            self.enemy_buttons[x][y].setStyleSheet(f"background-color: {color};")
-            self.enemy_buttons[x][y].setEnabled(False)
-            
-            if res == "miss":
-                self.my_turn = False
-                self.status_label.setText("Sıra Rakipte...")
-            
-            # Oyun bitti mi kontrolü sunucuya veya yerel board'a eklenebilir
+            # --- RAKİP BANA ATEŞ ETTİĞİNDE (Sol Tahta - Benim Alanım) ---
+            elif msg.startswith("ATTACK:"):
+                try:
+                    coords = msg.split(":")[1].split(",")
+                    x, y = int(coords[0]), int(coords[1])
+                    from board import fire
+                    result = fire(self.my_board, x, y)
+                    
+                    # Eğer gemim vurulduysa KIRMIZI, karavana ise AÇIK GRİ
+                    bg_color = "red" if result == "hit" else "lightgray"
+                    text = "X" if result == "hit" else "O"
+                    
+                    self.my_buttons[x][y].setStyleSheet(f"background-color: {bg_color}; color: white; border: 1px solid black;")
+                    self.my_buttons[x][y].setText(text)
+                    
+                    # Sonucu sunucuya bildir (Sunucu bunu rakibe RESULT olarak iletir)
+                    self.network.send(f"RESULT:{x},{y},{result}\n")
+                except Exception as e:
+                    print(f"Saldırı işleme hatası: {e}")
+
+            # --- BEN RAKİBİ VURDUĞUMDA (Sağ Tahta - Rakip Alanı) ---
+            elif msg.startswith("RESULT:"):
+                try:
+                    parts = msg.split(":")[1].split(",")
+                    x, y, res = int(parts[0]), int(parts[1]), parts[2]
+                
+                    # İisabet varsa KIRMIZI, karavana ise KOYU GRİ
+                    bg_color = "red" if res == "hit" else "gray"
+                    text = "X" if res == "hit" else "O"
+                    
+                    self.enemy_buttons[x][y].setStyleSheet(f"background-color: {bg_color}; color: white; border: 1px solid black;")
+                    self.enemy_buttons[x][y].setText(text)
+                    self.enemy_buttons[x][y].setEnabled(False) # Aynı yere tekrar basılmasın
+
+                    if res == "hit":
+                        self.status_label.setText("MÜKEMMEL ATIŞ! Tekrar ateş edin.")
+                        self.my_turn = True # İsabet halinde sıra oyuncuda kalır
+                
+                except Exception as e:
+                    print(f"Sonuç işleme hatası: {e}")

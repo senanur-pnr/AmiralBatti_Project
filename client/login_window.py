@@ -1,4 +1,5 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLineEdit, QPushButton, QLabel, QMessageBox
+import sys
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLineEdit, QPushButton, QLabel, QMessageBox
 
 class LoginWindow(QWidget):
     def __init__(self):
@@ -9,15 +10,13 @@ class LoginWindow(QWidget):
         self.setWindowTitle("Amiral Battı - Giriş")
         self.layout = QVBoxLayout()
 
-        # Kullanıcı Adı
         self.layout.addWidget(QLabel("Kullanıcı Adı:"))
         self.username_input = QLineEdit()
         self.layout.addWidget(self.username_input)
 
-        # Sunucu IP (AWS için zorunlu)
         self.layout.addWidget(QLabel("Sunucu IP (AWS):"))
         self.ip_input = QLineEdit()
-        self.ip_input.setPlaceholderText("Örn: 13.232.x.x")
+        self.ip_input.setPlaceholderText("Örn: 127.0.0.1")
         self.layout.addWidget(self.ip_input)
 
         self.login_button = QPushButton("Oyuna Bağlan")
@@ -31,7 +30,24 @@ class LoginWindow(QWidget):
         ip = self.ip_input.text()
         
         if username and ip:
-            # Burada Network sınıfını başlatıp ana oyuna geçeceğiz[cite: 2]
-            print(f"Bağlanılıyor: {username} @ {ip}")
+            try:
+                from network import Network
+                from setup_window import SetupWindow
+                
+                self.network = Network(ip)
+                if self.network.id:
+                    self.setup_win = SetupWindow(self.network, username)
+                    self.setup_win.show()
+                    self.close()
+                else:
+                    QMessageBox.critical(self, "Hata", "Sunucuya bağlanılamadı!")
+            except Exception as e:
+                QMessageBox.critical(self, "Hata", f"Bağlantı kurulamadı: {e}")
         else:
             QMessageBox.warning(self, "Hata", "Lütfen tüm alanları doldurun!")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = LoginWindow()
+    window.show()
+    sys.exit(app.exec_())

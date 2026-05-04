@@ -1,14 +1,14 @@
 import socket
 import threading
 
-HOST = "0.0.0.0" # AWS üzerinde tüm arayüzleri dinlemek için doğru seçim
+HOST = "0.0.0.0" 
 PORT = 6060
 
 class BattleShipServer:
     def __init__(self):
         self.clients = []
-        self.player_data = {} # Oyuncu tahtalarını ve durumlarını tutar
-        self.turn = 0 # Sıra Player 0'da başlar
+        self.player_data = {} 
+        self.turn = 0 
         self.lock = threading.Lock()
 
     def handle_client(self, conn, addr):
@@ -40,27 +40,34 @@ class BattleShipServer:
         conn.close()
 
     def process_command(self, p_idx, data):
-        """Oyun mantığını burada yönetiyoruz[cite: 1, 2]"""
+        # Oyuncu hazır olduğunda
         if data.startswith("READY:"):
-            # Oyuncudan gelen gemi dizilimini kaydet
             self.player_data[p_idx] = data.split(":")[1]
             print(f"Oyuncu {p_idx} hazır.")
+            
+            # İstemcinin 'ready_clicked' içindeki network.send() fonksiyonunun 
+            # takılı kalmaması için hemen bir yanıt gönderiyoruz
+            self.clients[p_idx].send("OK".encode())
+
             # İki oyuncu da hazırsa oyunu başlat
             if len(self.player_data) == 2:
-                self.broadcast("START:0") # Sıranın Player 0'da olduğunu bildir
+                print("Her iki oyuncu hazır. Oyun başlıyor...")
+                # Oyuncu 0'a senin sıran de
+                self.clients[0].send("TURN:YES".encode())
+                # Oyuncu 1'e bekle de
+                self.clients[1].send("TURN:NO".encode())
 
         elif data.startswith("ATTACK:"):
-            # Sıra kontrolü
             if p_idx == self.turn:
-                # Gelen saldırıyı diğer oyuncuya ilet
                 target_idx = 1 if p_idx == 0 else 0
+                # Saldırıyı diğer oyuncuya ilet
                 self.clients[target_idx].send(data.encode())
-                # Sırayı değiştir
+                # Sırayı değiştir ve oyunculara yeni durumu bildir
                 self.turn = target_idx
-                self.broadcast(f"TURN:{self.turn}")
+                self.clients[self.turn].send("TURN:YES".encode())
+                self.clients[p_idx].send("TURN:NO".encode())
 
         elif data.startswith("RESULT:"):
-            # Vuruş sonucunu (HIT/MISS) diğerine ilet
             target_idx = 1 if p_idx == 0 else 0
             self.clients[target_idx].send(data.encode())
 
@@ -73,6 +80,7 @@ class BattleShipServer:
 
     def start(self):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # Portun hızlıca tekrar kullanılabilmesi için
         server.bind((HOST, PORT))
         server.listen(2)
         print(f"Amiral Battı Sunucusu {PORT} portunda çalışıyor...")
